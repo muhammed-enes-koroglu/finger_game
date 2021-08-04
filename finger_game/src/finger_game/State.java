@@ -12,8 +12,9 @@ import java.util.stream.Collectors;
 public class State {
 	public int[] hands;
 	public boolean p1s_turn;
-	public final int DEPTH = 1000;
-	
+	public static final int DEPTH = 10;
+	public static final boolean PRINT = false;
+
 	/** @peerObjects */
 	public Set<State> parents;
 	public Set<State> children;
@@ -36,6 +37,24 @@ public class State {
 					allPossibleChildren.add(nwState);
 				}
 			}
+		
+		// Add hand-spliting functionality
+		tempHands = this.hands.clone();
+		if ((this.hands[0+k] == 0 && (this.hands[1+k] % 2) == 0)) {
+			tempHands[1+k] /= 2;
+			tempHands[0+k] = tempHands[1+k];
+			State nwState = new State(tempHands, !this.p1s_turn);
+			nwState.parents.add(this);
+			this.children.add(nwState);
+			allPossibleChildren.add(nwState);	
+		} else if((this.hands[1+k] == 0 && (this.hands[0+k] % 2) == 0)) {
+			tempHands[0+k] /= 2;
+			tempHands[1+k] = tempHands[0+k];			
+			State nwState = new State(tempHands, !this.p1s_turn);
+			nwState.parents.add(this);
+			this.children.add(nwState);
+			allPossibleChildren.add(nwState);	
+		}		
 	}
 	
 	public void addAllPossibleChildrenV2() {
@@ -48,7 +67,7 @@ public class State {
 		for (int hitter = 0+k; hitter < 2+k; hitter++)
 			for (int hit = 0; hit < 4; hit++) {
 				tempHands = this.hands.clone();
-				if ((hitter != hit)) {
+				if ((hitter != hit) && (hands[hitter] != 0) && (hands[hit] != 0)) {
 					tempHands[hit] += tempHands[hitter];
 					State nwState = new State(tempHands, !this.p1s_turn);
 					nwState.parents.add(this);
@@ -56,6 +75,25 @@ public class State {
 					allPossibleChildren.add(nwState);
 				}
 			}
+		
+		// Add hand-spliting functionality
+//		tempHands = this.hands.clone();
+//		Set<Integer> tf = new HashSet<Integer>(Arrays.asList(new Integer[] {2, 4}));
+//		if (this.hands[0+k] == 0 && tf.contains(this.hands[1+k])) {
+//			tempHands[1+k] /= 2;
+//			tempHands[0+k] = tempHands[1+k];
+//			State nwState = new State(tempHands, !this.p1s_turn);
+//			nwState.parents.add(this);
+//			this.children.add(nwState);
+//			allPossibleChildren.add(nwState);	
+//		} else if(this.hands[1+k] == 0 && tf.contains(this.hands[0+k])) {
+//			tempHands[0+k] /= 2;
+//			tempHands[1+k] = tempHands[0+k];			
+//			State nwState = new State(tempHands, !this.p1s_turn);
+//			nwState.parents.add(this);
+//			this.children.add(nwState);
+//			allPossibleChildren.add(nwState);	
+//		}
 	}
 	
 	public Set<State> getAllPossibleDescendants(int counter) {
@@ -92,7 +130,7 @@ public class State {
 		if (!this.p1s_turn)
 			throw new IllegalArgumentException("it's not p1's turn!!");
 		
-		Set<State> wonStates = getWonStates();
+		Set<State> wonStates = getWinnerStates();
 		Set<State[]> pathsToWin = new HashSet<>();
 		for (State target : wonStates) {
 			if (target.isReachableFrom(this))
@@ -103,12 +141,80 @@ public class State {
 		return pathsToWin.stream().min((s1, s2) -> ((Integer)s1.length).compareTo(s2.length)).get();
 	}
 	
-	public static Set<State> getWonStates() {
-		Set<State> wonStates = new HashSet<State>();
+	public static Set<State> getWinnerStates() {
+		Set<State> winningStates = new HashSet<State>();
 		for (int i = 1; i < 5; i++)
 			for (int j = 0; j < 5; j++)
-				wonStates.add(new State(new int[] {i, j, 0, 0}, false));
-		return wonStates;
+				winningStates.add(new State(new int[] {i, j, 0, 0}, false));
+		return winningStates;
+	}
+	
+	public static Set<State> getLoserStates() {
+		Set<State> losingStates = new HashSet<State>();
+		for (int i = 1; i < 5; i++)
+			for (int j = 0; j < 5; j++)
+				losingStates.add(new State(new int[] {0, 0, i, j}, true));
+		return losingStates;
+	}	
+	
+	public boolean isLost() {
+		return (this.p1s_turn) && (this.hands[0] == 0) && (this.hands[1] == 0);
+	}
+	
+	public boolean isWon() {
+		return (!this.p1s_turn) && (this.hands[2] == 0) && (this.hands[3] == 0);
+	}
+	
+	public int getScore(int searchDepth) {
+		if (this.isWon())
+			return +1;
+		if (this.isLost())
+			return -1;
+		if (searchDepth == 0)
+			return 0;
+		
+		this.addAllPossibleChildren();
+		Set<Integer> childScores = new HashSet<>();
+		for (State child : this.children) {
+			int  score= child.getScore(searchDepth - 1);
+			childScores.add(score);
+			
+			if (PRINT) {
+				String space = "";
+				for (int i=0; i<DEPTH-searchDepth; i++)
+					space += "    ";
+				System.out.print(space + "(" + (DEPTH-searchDepth+1) + "))  " + child.toString() + "  " + score + "\n");
+			}
+		}
+		
+		if (this.p1s_turn) {
+			if (childScores.contains(1))
+				return 1;
+			else if (!childScores.contains(0)) 
+				return -1; // childScores contains only -1. Means we will definitely lose. 
+		}
+		else if (childScores.contains(-1))
+			return -1;
+		else if (!childScores.contains(0))
+			return 1;
+		
+		return 0;
+	}
+	
+	public State findBestMove() {
+		this.addAllPossibleChildren();
+		
+		for (State child : this.children)
+			if (child.getScore(DEPTH) == 1) {
+				System.out.print("win ");
+				return child;
+			}
+		for (State child : this.children)
+			if (child.getScore(DEPTH) == 0) {
+				System.out.print("maybe win ");
+				return child;
+			}
+		return null;
 	}
 	
 	/** Find a path containing all the states to pass through to get to `target` in order,
@@ -117,10 +223,10 @@ public class State {
 	 *  @return | State[] of passed States if target can be reached within the given amount of steps `counter`.
 	 *  		| empty State[] if no path can be found.
 	 */
-	public State(int[] hands, boolean p1s_turn) {
+  	public State(int[] hands, boolean p1s_turn) {
 		if (hands == null || hands.length != 4)
 			throw new IllegalArgumentException("`hands` not legal!");
-		this.hands = hands;
+		this.hands = hands.clone();
 		for (int i = 0; i < 4; i++)
 			if (this.hands[i] >= 5)
 				this.hands[i] = 0;
@@ -193,8 +299,10 @@ public class State {
 	
 	@Override
 	public String toString() {
-		return "" + this.hands[3] + " " + this.hands[2] + (!this.p1s_turn ? " <" : "") +
-				"\n  " + this.hands[1] + " " + this.hands[0] + (this.p1s_turn ? " <" : "") + "\n\n";
+		return Arrays.toString(this.hands) + "  " + this.p1s_turn + "\n";
+		
+//		return "" + this.hands[3] + " " + this.hands[2] + (!this.p1s_turn ? " <" : "") +
+//				"\n" + this.hands[1] + " " + this.hands[0] + (this.p1s_turn ? " <" : "") + "\n\n";
 	}
 	
 	public static <T> T[] concatArray(T[] array1, T[] array2) {
@@ -211,4 +319,10 @@ public class State {
 	    return newarr;
 	    }
 
+	public State findEqualInSet(Set<State> collection) {
+		for (State state : collection)
+			if (state.equals(this))
+				return state;
+		return null;
+	}
 }
